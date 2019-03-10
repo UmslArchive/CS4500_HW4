@@ -133,7 +133,7 @@ class Circle
         }
 
         const sf::Vector2f getPosition() const { return position; }
-        const unsigned int getRadius() const { return radius; }
+        const float getRadius() const { return radius; }
 
 };                   
 
@@ -169,7 +169,7 @@ class Arrow
 
             //Calculate angle.
             angle = atanf((d.getPosition().y - s.getPosition().y) / (d.getPosition().x - s.getPosition().x));
-            angle = angle * 180 / 3.14159;
+            angle = angle * 180.0f / 3.14159f;
             std::cout << "angle: " << angle << std::endl;
 
 			//Calculate magnitude:
@@ -185,7 +185,7 @@ class Arrow
 			//Top vertex first. Since screen coordinate plane is flipped in y axis
 			//subtract from theta.
 			angle -= 30;
-			length *= 0.2;
+			length *= 0.2f;
 			float topWingX = length * cosf(angle) + destVertex.position.x;
 			float topWingY = length * sinf(angle) + destVertex.position.y;
 			sf::Vertex topWingVertex(sf::Vector2f(topWingX, topWingY));
