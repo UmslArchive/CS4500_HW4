@@ -14,6 +14,7 @@
 #include <cmath>
 #include <ctime>
 #include <cstdlib>
+#include <fstream>
 
 //Global ttf text font object.
 sf::Font FONT;
@@ -48,7 +49,7 @@ UniqueID::~UniqueID()
 
 //Initialize uid instance to nullptr, set starting id to 0.
 UniqueID* UniqueID::generator = nullptr;
-unsigned int UniqueID::id = -1;
+unsigned int UniqueID::id = -2; //begin at -2 so that when game starts, first circle ID is 1.
 
 
 //Ensures that only instance of UniqueID can be instantiated. (acts as constructor of sorts.)
@@ -70,7 +71,7 @@ class Circle
         //Unique circle identifier that corresponds the its index in the circle vector.
         //Pointer to UniqueID generator instance.
         UniqueID* uidInstance;
-        const unsigned int              ID;
+        const unsigned int      ID = -1;
 
         //Graphics.
         float                   radius;
@@ -98,7 +99,12 @@ class Circle
             setText();
             gfxCircle.setPosition(position);
             gfxCircle.setFillColor(color);
-        }                 
+        }              
+
+		Circle()
+		{
+			std::cout << "Default circle constructor called." << std::endl;
+		}
 
         void printID()
         {
@@ -126,7 +132,7 @@ class Circle
         }
 
         //Draw this circle with display text on top.
-        void draw(sf::RenderWindow* w)
+        void draw(sf::RenderWindow* const w)
         {
             w->draw(gfxCircle);
             w->draw(text);  
@@ -158,6 +164,8 @@ class Arrow
             color(sf::Color::Cyan)
         {}
 
+		Arrow() : source(-1), dest(-1) {}
+
         //Initialize graphical components of arrow based on source and dest circles.
         void init(const Circle s, const Circle d)
         {
@@ -184,23 +192,20 @@ class Arrow
 			//Create arrow-wing vertices:
 			//Top vertex first. Since screen coordinate plane is flipped in y axis
 			//subtract from theta.
-			angle -= 30;
-			length *= 0.2f;
-			float topWingX = length * cosf(angle) + destVertex.position.x;
-			float topWingY = length * sinf(angle) + destVertex.position.y;
+			float wingAngle = angle - 20;
+			length *= 0.06f;
+			float topWingX = length * cosf(wingAngle) + destVertex.position.x;
+			float topWingY = length * sinf(wingAngle) + destVertex.position.y;
 			sf::Vertex topWingVertex(sf::Vector2f(topWingX, topWingY));
 
 			//Bottom wing.
-			angle += 60;
-			float botWingX = length * cosf(angle) + destVertex.position.x;
-			float botWingY = length * sinf(angle) + destVertex.position.y;
+			wingAngle = angle + 20;
+			float botWingX = length * cosf(wingAngle) + destVertex.position.x;
+			float botWingY = length * sinf(wingAngle) + destVertex.position.y;
 			sf::Vertex botWingVertex(sf::Vector2f(botWingX, botWingY));
 
 			//Push wing vertex pairs onto vertex array.
-			vertices.push_back(destVertex);
 			vertices.push_back(topWingVertex);
-
-			vertices.push_back(destVertex);
 			vertices.push_back(botWingVertex);
 
 			//Translate to middle of circle instead of top left corner.
@@ -213,15 +218,16 @@ class Arrow
 
 			//Set color.
 			for (auto &v : vertices)
-				v.color = sf::Color::Red;
+				v.color = sf::Color(255, 0, 0, 155);
         }
 
         unsigned int getSourceCirc() { return source; }
         unsigned int getDestCirc() { return dest; }
 
-        void draw(sf::RenderWindow* w)
+        void draw(sf::RenderWindow* const w)
         {
-            w->draw(&vertices[0], vertices.size(), sf::Lines);
+            w->draw(&vertices[0], 2, sf::Lines);
+			w->draw(&vertices[1], 3, sf::Triangles);
         }
 
 
@@ -239,13 +245,128 @@ class Ticker
 //(checks, arrow src and dest, number of circles, etc.). 
 class Game
 {
+	private:
+		unsigned int		numCircles;
+		unsigned int		numArrows;
 
-};
+		//Storage containers for circles and arrows each game.
+		std::vector<Circle> circles;
+		std::vector<Arrow>	arrows;
 
-//Runs a specified number of rounds of the game. Stores stats that span all rounds.
-class Set
-{
+		//Stats.
+		unsigned int		totalChecks;
+		unsigned int		highestChecks;
+		float				avgChecks;
 
+	public:
+		//The constructor for circles calls for a position.
+		//Initialize circles vector positioning circles in a grid layout.
+		void initCircles()
+		{
+			//Starting position vector.
+			sf::Vector2i pos;
+			pos.x = 0;
+			pos.y = 0;
+
+			//Create then destroy a dummy circle to gain radius info.
+			Circle* dummy = new Circle(pos);
+			float radius = dummy->getRadius();
+			delete dummy;
+
+			//Initialize circles vector.
+			for (int i = 0; i < numCircles; ++i)
+			{
+				//Create new Circle object at pos then push onto vector.
+				Circle c(pos);
+				circles.push_back(c);
+
+				//Update position.
+				if (pos.x < 600 - radius * 2)
+				{
+					pos.x += radius * 2;
+				}
+				else
+				{
+					pos.x = 0;
+					pos.y += radius * 2;
+				}
+			}
+		}
+
+		void initFromFile(std::string filePath)
+		{
+			//Reset.
+			numCircles = 0;
+			circles.resize(0);
+			arrows.resize(0);
+			totalChecks = 0;
+			highestChecks = 0;
+			avgChecks = 0.0f;
+
+			//File stream object.
+			std::fstream fin;
+
+			//Open infile for reading in.
+			fin.open(filePath, std::ios::in);
+
+			//Variables to store read values.
+			int value = -1;
+			int srcCircle = -1;
+			int destCircle = -1;
+
+			//Read file until EOF.
+			int currentLine = 1;
+			while (fin >> value)
+			{
+				switch (currentLine)
+				{
+					//Read number of circles.
+					case 1:
+						numCircles = value;
+
+						//Initalize circle vector.
+						initCircles();
+
+						++currentLine;
+						break;
+
+					//Read number of arrows.
+					case 2:
+						++currentLine;
+						numArrows = value;
+						break;
+
+					//Read an arrow.
+					default:
+						//Left int.
+						srcCircle = value;
+
+						//Right int.
+						fin >> value;
+						destCircle = value;
+
+						//Push onto arrow vector.
+						std::cout << "whatev";
+						Arrow a(srcCircle - 1, destCircle - 1);
+						a.init(circles[srcCircle - 1], circles[destCircle - 1]);
+						arrows.push_back(a);
+
+						++currentLine;
+						break;
+				}
+			}
+		}
+
+		void draw(sf::RenderWindow* const w)
+		{
+			//Draw circles.
+			for (auto &circle : circles)
+				circle.draw(w);
+
+			//Draw arrows.
+			for (auto &arrow : arrows)
+				arrow.draw(w);
+		}
 };
 
 
@@ -268,24 +389,64 @@ void testUID()
     }
 }
 
+void testGFX()
+{
+	//Create vector of circles.
+	std::vector<Circle> circles;
+	for (int i = 0; i < 5; ++i)
+		circles.push_back(Circle(sf::Vector2i(rand() % 500, rand() % 500)));
+
+	//Create vector of arrows.
+	Arrow testArrow = Arrow(0, 4);
+	testArrow.init(circles[testArrow.getSourceCirc()], circles[testArrow.getDestCirc()]);
+
+	//Create window object.
+	sf::RenderWindow* window = new sf::RenderWindow(sf::VideoMode(600, 600), "Circles and Arrows");
+	window->setVerticalSyncEnabled(true);
+
+	//Main loop:
+	while (window->isOpen())
+	{
+		//Event polling.
+		sf::Event e;
+		while (window->pollEvent(e))
+		{
+			if (e.type == sf::Event::Closed)
+				window->close();
+		}
+
+		//Rendering:
+		window->clear(sf::Color::Black);
+
+		//Draw circles.
+		for (auto &circle : circles)
+		{
+			circle.draw(window);
+		}
+
+		//Draw arrows.
+		testArrow.draw(window);
+
+		window->display();
+	}
+
+	//Free the window at end of exec.
+	delete window;
+	window = nullptr;
+}
+
 int main()
 {
     srand(time(NULL));
 
     initFont();
 
-    //Create vector of circles.
-    std::vector<Circle> circles;
-    for(int i = 0; i < 5; ++i)
-        circles.push_back(Circle(sf::Vector2i(rand() % 500 , rand() % 500)));
-
-    //Create vector of arrows.
-    Arrow testArrow = Arrow(0, 4);
-    testArrow.init(circles[testArrow.getSourceCirc()], circles[testArrow.getDestCirc()]);
-
     //Create window object.
     sf::RenderWindow* window = new sf::RenderWindow(sf::VideoMode(600, 600), "Circles and Arrows");
     window->setVerticalSyncEnabled(true);
+
+	Game circlesAndArrows;
+	circlesAndArrows.initFromFile("HW4infile.txt");
 
     //Main loop:
     while(window->isOpen())
@@ -301,14 +462,7 @@ int main()
         //Rendering:
         window->clear(sf::Color::Black);
 
-        //Draw circles.
-        for(auto &circle : circles)
-        {
-            circle.draw(window);
-        }
-
-        //Draw arrows.
-        testArrow.draw(window);
+		circlesAndArrows.draw(window);
 
         window->display();
     }
