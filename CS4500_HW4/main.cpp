@@ -121,7 +121,7 @@ class Circle
             //Set text settings.
             text.setString(display);
             text.setFont(FONT);
-            text.setCharacterSize(2 + radius / 3);
+            text.setCharacterSize(1 + radius / 3);
             text.setFillColor(sf::Color::White);
             text.setStyle(sf::Text::Regular);
             text.setOutlineColor(sf::Color::Black);
@@ -132,18 +132,28 @@ class Circle
         }
 
         //Draw this circle with display text on top.
-        void draw(sf::RenderWindow* const w)
+        void draw(sf::RenderWindow* const w, unsigned int id)
         {
+			//Recolor if > 0 checks in circle.
+			if (checks > 0)
+				gfxCircle.setFillColor(sf::Color::Cyan);
+
+			//Current circle is yellow.
+			if (id == ID)
+				gfxCircle.setFillColor(sf::Color::Yellow);
+
             w->draw(gfxCircle);
             w->draw(text);  
         }
 
+		//Getters :(
         const sf::Vector2f getPosition() const { return position; }
         const float getRadius() const { return radius; }
+		const unsigned int getChecks() const { return checks; }
+
+		void incrementChecks() { ++checks; }
 
 };                   
-
-
 
 class Arrow
 {
@@ -194,14 +204,14 @@ class Arrow
 			//subtract from theta.
 			float wingAngle = angle - 20;
 			length *= 0.06f;
-			float topWingX = length * cosf(wingAngle) + destVertex.position.x;
-			float topWingY = length * sinf(wingAngle) + destVertex.position.y;
+			float topWingX = 20 * cosf(wingAngle) + destVertex.position.x;
+			float topWingY = 20 * sinf(wingAngle) + destVertex.position.y;
 			sf::Vertex topWingVertex(sf::Vector2f(topWingX, topWingY));
 
 			//Bottom wing.
 			wingAngle = angle + 20;
-			float botWingX = length * cosf(wingAngle) + destVertex.position.x;
-			float botWingY = length * sinf(wingAngle) + destVertex.position.y;
+			float botWingX = 20 * cosf(wingAngle) + destVertex.position.x;
+			float botWingY = 20 * sinf(wingAngle) + destVertex.position.y;
 			sf::Vertex botWingVertex(sf::Vector2f(botWingX, botWingY));
 
 			//Push wing vertex pairs onto vertex array.
@@ -218,7 +228,7 @@ class Arrow
 
 			//Set color.
 			for (auto &v : vertices)
-				v.color = sf::Color(255, 0, 0, 155);
+				v.color = sf::Color(255, 0, 0, 255);
         }
 
         unsigned int getSourceCirc() { return source; }
@@ -233,19 +243,13 @@ class Arrow
 
 };
 
-//Each turn of the game runs once per tick. All time related functions
-//are contained within this class.
-class Ticker
-{
-
-};
-
 //Class intializes the all aspects of one round of the game including
 //all graphics (positions, colors, etc.), all per-round game stats
 //(checks, arrow src and dest, number of circles, etc.). 
 class Game
 {
 	private:
+		//Initialization variables.
 		unsigned int		numCircles;
 		unsigned int		numArrows;
 
@@ -253,10 +257,19 @@ class Game
 		std::vector<Circle> circles;
 		std::vector<Arrow>	arrows;
 
+		//Timing.
+		sf::Clock			timer;
+		int					prevUpdateTime;
+		int					currentTick;
+		const int			tickRate = 50; //"milliseconds" per tick.
+
 		//Stats.
 		unsigned int		totalChecks;
 		unsigned int		highestChecks;
 		float				avgChecks;
+
+		//Checkmark placer.
+		unsigned int		currentCircle;
 
 	public:
 		//The constructor for circles calls for a position.
@@ -291,17 +304,29 @@ class Game
 					pos.y += radius * 2;
 				}
 			}
+
+			//Place a check in starting circle and update display text.
+			circles[0].incrementChecks();
+			circles[0].setText();
 		}
 
 		void initFromFile(std::string filePath)
 		{
 			//Reset.
-			numCircles = 0;
+			numCircles = 0;	
+			numArrows = 0;
+
 			circles.resize(0);
 			arrows.resize(0);
-			totalChecks = 0;
+
+			totalChecks = 0;	
 			highestChecks = 0;
 			avgChecks = 0.0f;
+
+			currentTick = 0;
+			prevUpdateTime = 0;
+
+			currentCircle = 0;
 
 			//File stream object.
 			std::fstream fin;
@@ -346,7 +371,6 @@ class Game
 						destCircle = value;
 
 						//Push onto arrow vector.
-						std::cout << "whatev";
 						Arrow a(srcCircle - 1, destCircle - 1);
 						a.init(circles[srcCircle - 1], circles[destCircle - 1]);
 						arrows.push_back(a);
@@ -355,24 +379,82 @@ class Game
 						break;
 				}
 			}
+
+			//Reset the timer.
+			timer.restart();
 		}
 
 		void draw(sf::RenderWindow* const w)
 		{
 			//Draw circles.
 			for (auto &circle : circles)
-				circle.draw(w);
+				circle.draw(w, currentCircle);
 
 			//Draw arrows.
 			for (auto &arrow : arrows)
 				arrow.draw(w);
+		}
+
+		void update()
+		{
+			//Check for game over.
+			if (isGameOver())
+			{
+				//Game no longer updates when timer is continually restarted.
+				timer.restart();
+			}
+
+			//Store currentTick before updating for comparison later.
+			int tempTick = currentTick;
+
+			//Get current elapsed time.
+			int now = timer.getElapsedTime().asMilliseconds();
+
+			//Update currentTick.
+			if (now - prevUpdateTime > tickRate)
+				++currentTick;
+
+			//Once enough time has passed, update the game.
+			if (tempTick != currentTick)
+			{
+				//New prevUpdateTime.
+				prevUpdateTime = now;
+				//Scan arrows vector and generate list of valid moves based on current position.
+				std::vector<Arrow> validMoves;
+				for (auto arrow : arrows)
+				{
+					if (currentCircle == arrow.getSourceCirc())
+					{
+						validMoves.push_back(arrow);
+					}
+				}
+
+				//Randomly select a valid arrow to travel on.
+				int moveSelection = rand() % validMoves.size();
+
+				//Move.
+				currentCircle = validMoves[moveSelection].getDestCirc();
+
+				//Place check in new position.
+				circles[currentCircle].incrementChecks();
+				circles[currentCircle].setText();
+			}			
+		}
+
+		bool isGameOver()
+		{
+			//If any circle has 0 checks, then no gameover.
+			for (auto &c : circles)
+				if (c.getChecks() == 0)
+					return false;
+			return true;
 		}
 };
 
 
 void initFont()
 {
-    if (!FONT.loadFromFile("LeagueGothic-Regular.otf"))
+    if (!FONT.loadFromFile("C:\\Windows\\Fonts\\calibri.TTF"))
         std::cout << "Couldn't load font." << std::endl;
 
     return;
@@ -421,7 +503,7 @@ void testGFX()
 		//Draw circles.
 		for (auto &circle : circles)
 		{
-			circle.draw(window);
+			circle.draw(window, 0);
 		}
 
 		//Draw arrows.
@@ -462,6 +544,7 @@ int main()
         //Rendering:
         window->clear(sf::Color::Black);
 
+		circlesAndArrows.update();
 		circlesAndArrows.draw(window);
 
         window->display();
