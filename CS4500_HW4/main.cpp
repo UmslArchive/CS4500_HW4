@@ -2,7 +2,15 @@
 //Class:    CS 4500
 //Assign:   Homework 4
 //Date:     3/8/19
-//Desc:     
+//Desc:     Program reads from a user specified init file and sets up a game that involves
+//			randomly visiting circles by following a set of predetermined paths (diagraph).
+//			A 'checkmark' is placed in each circle visited until all circles have been visited
+//			at least once. Current status of the program is displayed graphically, and statistics
+//			are printed at the end.
+//
+//			At the start of the game, the user is prompted for an input file. If the file exists,
+//			it is read from and the game initializes and runs until completion after a 3 second delay.
+//			User can press 'enter' key when program is over to close.
 //=======================================================================
 
 #include <SFML/Graphics.hpp>
@@ -30,7 +38,7 @@ class UniqueID
         //incremented each time nextID() is called.
         static unsigned int         id;
 
-        //No memory leaks.
+        //No memory leaks hopefully.
         ~UniqueID();
 
     public:
@@ -47,7 +55,7 @@ UniqueID::~UniqueID()
     generator = nullptr;
 }
 
-//Initialize uid instance to nullptr, set starting id to 0.
+//Initialize uid instance to nullptr, set starting id to -2.
 UniqueID* UniqueID::generator = nullptr;
 unsigned int UniqueID::id = -2; //begin at -2 so that when game starts, first circle ID is 1.
 
@@ -190,7 +198,7 @@ class Arrow
             //Calculate angle.
             angle = atanf((d.getPosition().y - s.getPosition().y) / (d.getPosition().x - s.getPosition().x));
             angle = angle * 180.0f / 3.14159f;
-            std::cout << "angle: " << angle << std::endl;
+            //std::cout << "angle: " << angle << std::endl;
 
 			//Calculate magnitude:
 			float x1 = s.getPosition().x;
@@ -199,7 +207,7 @@ class Arrow
 			float y2 = d.getPosition().y;
 
 			length = sqrtf(powf(x2 - x1, 2) + powf(y2 - y1, 2)); //Distance formula.
-			std::cout << "mag: " << length << std::endl;
+			//std::cout << "mag: " << length << std::endl;
 
 			//Create arrow-wing vertices:
 			//Top vertex first. Since screen coordinate plane is flipped in y axis
@@ -263,9 +271,10 @@ class Game
 
 		//Timing.
 		sf::Clock			timer;
-		int					prevUpdateTime = 0; //Start after 100 ms delay.
+		int					prevUpdateTime = 0;
 		int					currentTick;
-		const int			tickRate = 500; //"milliseconds" per tick.
+		const int			tickRate = 400; //"milliseconds" per tick.
+		const int			startDelayMS = 3000; //3 second delay before game starts. Gives time for window to load.
 
 		//Stats.
 		unsigned int		totalChecks;
@@ -276,13 +285,18 @@ class Game
 		unsigned int		currentCircle;
 
 		//Game over text.
+		bool				gameover;
 		sf::Text			go;
 		sf::Text			prompt;
 
 	public:
 		//Constructor takes infile path as string.
 		Game(std::string file = "") :
-			infile(file)
+			infile(file),
+			totalChecks(0),
+			highestChecks(0),
+			avgChecks(0.0f),
+			gameover(false)
 		{}
 
 		//The constructor for circles calls for a position.
@@ -300,7 +314,7 @@ class Game
 			delete dummy;
 
 			//Initialize circles vector.
-			for (int i = 0; i < numCircles; ++i)
+			for (int i = 0; i < numCircles && i < 8; ++i)
 			{
 				//Create new Circle object at pos then push onto vector.
 				Circle c(pos);
@@ -431,7 +445,7 @@ class Game
 			int now = timer.getElapsedTime().asMilliseconds();
 
 			//Update currentTick.
-			if (now - prevUpdateTime > tickRate && now > 3000)
+			if (now - prevUpdateTime > tickRate && now > startDelayMS)
 				++currentTick;
 
 			//Once enough time has passed, update the game.
@@ -491,7 +505,39 @@ class Game
 			prompt.setLineSpacing(0.75f);
 			prompt.setPosition(sf::Vector2f(225, 310));
 
+			//print stats only once.
+			if (!gameover)
+				printGameOverStats();
+
+			gameover = true;
+
 			return true;
+		}
+
+		void printGameOverStats()
+		{
+			//Calculate stats.
+			for (auto &circle : circles)
+			{
+				//Total checks.
+				unsigned int circleChecks = circle.getChecks();
+				totalChecks += circleChecks;
+
+				//Highest checks on one circle.
+				if (circleChecks > highestChecks)
+					highestChecks = circleChecks;
+
+				//Avg. checks per circle.
+				avgChecks = (float)totalChecks / (float)circles.size();
+			}
+
+			//Print stats.
+			system("CLS");
+			std::cout << "GAME OVER!" << std::endl;
+			printf("Total Checks: %d\nHighest Checks on 1 circle: %d\nAvg. Checks / Circle: %2.2f\n",
+				totalChecks, highestChecks, avgChecks);
+				
+			
 		}
 };
 
@@ -542,6 +588,8 @@ std::string promptForInfile()
 		}
 			
 	}
+
+	fin.close();
 
 	return userInput;
 }
@@ -619,6 +667,9 @@ int main()
         {
             if (e.type == sf::Event::Closed)
             window->close();
+
+			if (sf::Keyboard::isKeyPressed(sf::Keyboard::Enter) && circlesAndArrows.isGameOver())
+				window->close();
         }
 
         //Rendering:
@@ -638,4 +689,4 @@ int main()
 }
 
 
-//todo: add delay to start of game.
+//todo: Add game constraints.
