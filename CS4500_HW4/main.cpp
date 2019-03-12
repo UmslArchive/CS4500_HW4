@@ -15,6 +15,7 @@
 #include <ctime>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 
 //Global ttf text font object.
 sf::Font FONT;
@@ -44,7 +45,6 @@ UniqueID::~UniqueID()
 {
     delete generator;
     generator = nullptr;
-    std::cout << "uid destructor called."; //just for learning.
 }
 
 //Initialize uid instance to nullptr, set starting id to 0.
@@ -137,6 +137,8 @@ class Circle
 			//Recolor if > 0 checks in circle.
 			if (checks > 0)
 				gfxCircle.setFillColor(sf::Color::Cyan);
+			else
+				gfxCircle.setFillColor(sf::Color::Green);
 
 			//Current circle is yellow.
 			if (id == ID)
@@ -249,6 +251,8 @@ class Arrow
 class Game
 {
 	private:
+		std::string infile = "";
+
 		//Initialization variables.
 		unsigned int		numCircles;
 		unsigned int		numArrows;
@@ -259,9 +263,9 @@ class Game
 
 		//Timing.
 		sf::Clock			timer;
-		int					prevUpdateTime;
+		int					prevUpdateTime = 0; //Start after 100 ms delay.
 		int					currentTick;
-		const int			tickRate = 50; //"milliseconds" per tick.
+		const int			tickRate = 500; //"milliseconds" per tick.
 
 		//Stats.
 		unsigned int		totalChecks;
@@ -271,7 +275,16 @@ class Game
 		//Checkmark placer.
 		unsigned int		currentCircle;
 
+		//Game over text.
+		sf::Text			go;
+		sf::Text			prompt;
+
 	public:
+		//Constructor takes infile path as string.
+		Game(std::string file = "") :
+			infile(file)
+		{}
+
 		//The constructor for circles calls for a position.
 		//Initialize circles vector positioning circles in a grid layout.
 		void initCircles()
@@ -293,7 +306,7 @@ class Game
 				Circle c(pos);
 				circles.push_back(c);
 
-				//Update position.
+				//Set position coordinates.
 				if (pos.x < 600 - radius * 2)
 				{
 					pos.x += radius * 2;
@@ -310,7 +323,7 @@ class Game
 			circles[0].setText();
 		}
 
-		void initFromFile(std::string filePath)
+		void initFromFile()
 		{
 			//Reset.
 			numCircles = 0;	
@@ -332,7 +345,7 @@ class Game
 			std::fstream fin;
 
 			//Open infile for reading in.
-			fin.open(filePath, std::ios::in);
+			fin.open(infile, std::ios::in);
 
 			//Variables to store read values.
 			int value = -1;
@@ -393,6 +406,13 @@ class Game
 			//Draw arrows.
 			for (auto &arrow : arrows)
 				arrow.draw(w);
+
+			//Game Over.
+			if (isGameOver())
+			{
+				w->draw(go);
+				w->draw(prompt);
+			}
 		}
 
 		void update()
@@ -411,7 +431,7 @@ class Game
 			int now = timer.getElapsedTime().asMilliseconds();
 
 			//Update currentTick.
-			if (now - prevUpdateTime > tickRate)
+			if (now - prevUpdateTime > tickRate && now > 3000)
 				++currentTick;
 
 			//Once enough time has passed, update the game.
@@ -419,12 +439,14 @@ class Game
 			{
 				//New prevUpdateTime.
 				prevUpdateTime = now;
+
 				//Scan arrows vector and generate list of valid moves based on current position.
 				std::vector<Arrow> validMoves;
 				for (auto arrow : arrows)
 				{
 					if (currentCircle == arrow.getSourceCirc())
 					{
+						//Push a copy of the arrow onto valid move vector.
 						validMoves.push_back(arrow);
 					}
 				}
@@ -443,10 +465,32 @@ class Game
 
 		bool isGameOver()
 		{
-			//If any circle has 0 checks, then no gameover.
+			//If any circle has 0 checks, then not gameover.
 			for (auto &c : circles)
-				if (c.getChecks() == 0)
+				if (c.getChecks() < 1)
 					return false;
+
+			//Set game over text.
+			go.setString("GAME OVER");
+			go.setFont(FONT);
+			go.setCharacterSize(60);
+			go.setFillColor(sf::Color::Red);
+			go.setOutlineColor(sf::Color::White);
+			go.setOutlineThickness(4);
+			go.setStyle(sf::Text::Bold);
+			go.setPosition(sf::Vector2f(175, 250));
+
+
+			prompt.setString("Press\n\tEnter");
+			prompt.setFont(FONT);
+			prompt.setCharacterSize(40);
+			prompt.setFillColor(sf::Color::White);
+			prompt.setOutlineColor(sf::Color::Red);
+			prompt.setOutlineThickness(3);
+			prompt.setStyle(sf::Text::Italic);
+			prompt.setLineSpacing(0.75f);
+			prompt.setPosition(sf::Vector2f(225, 310));
+
 			return true;
 		}
 };
@@ -469,6 +513,37 @@ void testUID()
     {
         std::cout << u->nextID() << std::endl;
     }
+}
+
+std::string promptForInfile()
+{
+	bool valid = false;
+	std::string userInput;
+	std::fstream fin;
+
+	//Until an existing file is found...
+	while (!valid)
+	{
+		//Get user input.
+		std::cout << "Enter in-file: ";
+		std::cin >> userInput;
+
+		//Check if file exists.
+		fin.open(userInput);
+		if (fin.good())
+			valid = true;
+		else
+		{
+			//Reset the std::istream buffer.
+			std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+			//Output error.
+			std::cout << "File does not exist." << std::endl;
+		}
+			
+	}
+
+	return userInput;
 }
 
 void testGFX()
@@ -495,6 +570,7 @@ void testGFX()
 		{
 			if (e.type == sf::Event::Closed)
 				window->close();
+
 		}
 
 		//Rendering:
@@ -509,6 +585,7 @@ void testGFX()
 		//Draw arrows.
 		testArrow.draw(window);
 
+		//Swap buffer.
 		window->display();
 	}
 
@@ -519,16 +596,19 @@ void testGFX()
 
 int main()
 {
+	//Seed the rand().
     srand(time(NULL));
 
+	//Initialize global font.
     initFont();
+
+	//Initialize game from file.
+	Game circlesAndArrows(promptForInfile());
+	circlesAndArrows.initFromFile();
 
     //Create window object.
     sf::RenderWindow* window = new sf::RenderWindow(sf::VideoMode(600, 600), "Circles and Arrows");
     window->setVerticalSyncEnabled(true);
-
-	Game circlesAndArrows;
-	circlesAndArrows.initFromFile("HW4infile.txt");
 
     //Main loop:
     while(window->isOpen())
@@ -556,3 +636,6 @@ int main()
 
     return 0;
 }
+
+
+//todo: add delay to start of game.
