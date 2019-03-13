@@ -11,6 +11,13 @@
 //			At the start of the game, the user is prompted for an input file. If the file exists,
 //			it is read from and the game initializes and runs until completion after a 3 second delay.
 //			User can press 'enter' key when program is over to close.
+//
+//			Note: It is assumed that the grader's computer has a similar windows 10 installation in which
+//				  the directory that fonts are stored is the same as the dev computer "C:\Windows\Fonts\".
+//				  If this is not the case, no text will render in the program. The font file can be specified
+//				  @Line 607 |  find (_NO_TEXT_)
+//
+//			Dependencies: Simple and Fast Media Library (SFML) <https://www.sfml-dev.org/index.php>
 //=======================================================================
 
 #include <SFML/Graphics.hpp>
@@ -24,9 +31,6 @@
 #include <cstdlib>
 #include <fstream>
 #include <limits>
-
-//Global ttf text font object.
-sf::Font FONT;
 
 //Singleton class used to generate unique IDs.
 class UniqueID
@@ -73,6 +77,7 @@ UniqueID* UniqueID::uid()
 unsigned int UniqueID::nextID() { return ++generator->id; }
 
 //---------------------------------------
+//Data container for graphics and in-game properties of circles.
 class Circle
 {
     private:       
@@ -104,15 +109,11 @@ class Circle
             ID(uidInstance->nextID())
         {
             //Graphical settings.
-            setText();
             gfxCircle.setPosition(position);
             gfxCircle.setFillColor(color);
         }              
 
-		Circle()
-		{
-			std::cout << "Default circle constructor called." << std::endl;
-		}
+		Circle() {} //compiler wouldn't let me delete.
 
         void printID()
         {
@@ -120,15 +121,15 @@ class Circle
         }
 
         //Sets the text contained within each circle.
-        void setText()
+        void setText(sf::Font& __font)
         {
             //Create circle display string.
             sf::String display = "";
-            display = "    ID: " + std::to_string(ID + 1) + "\nChecks: " + std::to_string(checks);
+            display = "    ID: " + std::to_string(ID) + "\nChecks: " + std::to_string(checks);
             
             //Set text settings.
             text.setString(display);
-            text.setFont(FONT);
+            text.setFont(__font);
             text.setCharacterSize(1 + radius / 3);
             text.setFillColor(sf::Color::White);
             text.setStyle(sf::Text::Regular);
@@ -140,7 +141,7 @@ class Circle
         }
 
         //Draw this circle with display text on top.
-        void draw(sf::RenderWindow* const w, unsigned int id)
+        void draw(sf::RenderWindow& w, unsigned int id)
         {
 			//Recolor if > 0 checks in circle.
 			if (checks > 0)
@@ -152,8 +153,8 @@ class Circle
 			if (id == ID)
 				gfxCircle.setFillColor(sf::Color::Yellow);
 
-            w->draw(gfxCircle);
-            w->draw(text);  
+            w.draw(gfxCircle);
+            w.draw(text);  
         }
 
 		//Getters :(
@@ -169,9 +170,9 @@ class Arrow
 {
     private:
         const unsigned int      source, dest;
-        sf::Color       color;
-        float           angle;
-        float           length;
+        sf::Color				color;
+        float					angle;
+        float					length;
 
         //Vertex array. 
         std::vector<sf::Vertex> vertices;
@@ -198,7 +199,6 @@ class Arrow
             //Calculate angle.
             angle = atanf((d.getPosition().y - s.getPosition().y) / (d.getPosition().x - s.getPosition().x));
             angle = angle * 180.0f / 3.14159f;
-            //std::cout << "angle: " << angle << std::endl;
 
 			//Calculate magnitude:
 			float x1 = s.getPosition().x;
@@ -207,8 +207,8 @@ class Arrow
 			float y2 = d.getPosition().y;
 
 			length = sqrtf(powf(x2 - x1, 2) + powf(y2 - y1, 2)); //Distance formula.
-			//std::cout << "mag: " << length << std::endl;
 
+			//This math is wrong.										//[//
 			//Create arrow-wing vertices:
 			//Top vertex first. Since screen coordinate plane is flipped in y axis
 			//subtract from theta.
@@ -222,7 +222,7 @@ class Arrow
 			wingAngle = angle + 20;
 			float botWingX = 20 * cosf(wingAngle) + destVertex.position.x;
 			float botWingY = 20 * sinf(wingAngle) + destVertex.position.y;
-			sf::Vertex botWingVertex(sf::Vector2f(botWingX, botWingY));
+			sf::Vertex botWingVertex(sf::Vector2f(botWingX, botWingY)); //]//
 
 			//Push wing vertex pairs onto vertex array.
 			vertices.push_back(topWingVertex);
@@ -236,18 +236,22 @@ class Arrow
 				v.position.y += s.getRadius();
 			}
 
-			//Set color.
+			//Set color of each vertex.
 			for (auto &v : vertices)
-				v.color = sf::Color(255, 0, 0, 255);
+				v.color = sf::Color(255, 0, 0, 255); //red, full opacity.
         }
 
+		//Getters...
         unsigned int getSourceCirc() { return source; }
         unsigned int getDestCirc() { return dest; }
 
-        void draw(sf::RenderWindow* const w)
+
+		//First draws the magnitude line of the arrow, then draws a triangle using the
+		//three other vertices that are not srcCircle.
+        void draw(sf::RenderWindow& w)
         {
-            w->draw(&vertices[0], 2, sf::Lines);
-			w->draw(&vertices[1], 3, sf::Triangles);
+            w.draw(&vertices[0], 2, sf::Lines);
+			w.draw(&vertices[1], 3, sf::Triangles);
         }
 
 
@@ -285,19 +289,22 @@ class Game
 		unsigned int		currentCircle;
 
 		//Game over text.
+		sf::Font&			_font;
 		bool				gameover;
 		sf::Text			go;
 		sf::Text			prompt;
 
 	public:
 		//Constructor takes infile path as string.
-		Game(std::string file = "") :
+		Game(sf::Font &font, std::string file = "") :
 			infile(file),
 			totalChecks(0),
 			highestChecks(0),
 			avgChecks(0.0f),
-			gameover(false)
-		{}
+			gameover(false),
+			_font(font)
+		{
+		}
 
 		//The constructor for circles calls for a position.
 		//Initialize circles vector positioning circles in a grid layout.
@@ -314,7 +321,7 @@ class Game
 			delete dummy;
 
 			//Initialize circles vector.
-			for (int i = 0; i < numCircles && i < 8; ++i)
+			for (int i = 0; i < numCircles; ++i)
 			{
 				//Create new Circle object at pos then push onto vector.
 				Circle c(pos);
@@ -334,7 +341,7 @@ class Game
 
 			//Place a check in starting circle and update display text.
 			circles[0].incrementChecks();
-			circles[0].setText();
+			circles[0].setText(_font);
 		}
 
 		void initFromFile()
@@ -411,7 +418,7 @@ class Game
 			timer.restart();
 		}
 
-		void draw(sf::RenderWindow* const w)
+		void draw(sf::RenderWindow& w)
 		{
 			//Draw circles.
 			for (auto &circle : circles)
@@ -424,13 +431,22 @@ class Game
 			//Game Over.
 			if (isGameOver())
 			{
-				w->draw(go);
-				w->draw(prompt);
+				w.draw(go);
+				w.draw(prompt);
 			}
 		}
 
 		void update()
 		{
+			std::vector<Arrow> validMoves;
+
+			//Init circle text.
+			if (currentTick == 0)
+			{
+				for (auto &circle : circles)
+					circle.setText(_font);
+			}
+
 			//Check for game over.
 			if (isGameOver())
 			{
@@ -455,8 +471,10 @@ class Game
 				prevUpdateTime = now;
 
 				//Scan arrows vector and generate list of valid moves based on current position.
-				std::vector<Arrow> validMoves;
-				for (auto arrow : arrows)
+
+
+
+				for (auto &arrow : arrows)
 				{
 					if (currentCircle == arrow.getSourceCirc())
 					{
@@ -473,7 +491,7 @@ class Game
 
 				//Place check in new position.
 				circles[currentCircle].incrementChecks();
-				circles[currentCircle].setText();
+				circles[currentCircle].setText(_font);
 			}			
 		}
 
@@ -486,7 +504,7 @@ class Game
 
 			//Set game over text.
 			go.setString("GAME OVER");
-			go.setFont(FONT);
+			go.setFont(_font);
 			go.setCharacterSize(60);
 			go.setFillColor(sf::Color::Red);
 			go.setOutlineColor(sf::Color::White);
@@ -496,7 +514,7 @@ class Game
 
 
 			prompt.setString("Press\n\tEnter");
-			prompt.setFont(FONT);
+			prompt.setFont(_font);
 			prompt.setCharacterSize(40);
 			prompt.setFillColor(sf::Color::White);
 			prompt.setOutlineColor(sf::Color::Red);
@@ -508,7 +526,6 @@ class Game
 			//print stats only once.
 			if (!gameover)
 				printGameOverStats();
-
 			gameover = true;
 
 			return true;
@@ -540,26 +557,6 @@ class Game
 			
 		}
 };
-
-
-void initFont()
-{
-    if (!FONT.loadFromFile("C:\\Windows\\Fonts\\calibri.TTF"))
-        std::cout << "Couldn't load font." << std::endl;
-
-    return;
-}
-
-void testUID()
-{
-    UniqueID* u = UniqueID::uid();
-    UniqueID* v = UniqueID::uid();
-
-    for(int i = 0; i < 5; ++i)
-    {
-        std::cout << u->nextID() << std::endl;
-    }
-}
 
 std::string promptForInfile()
 {
@@ -594,99 +591,49 @@ std::string promptForInfile()
 	return userInput;
 }
 
-void testGFX()
-{
-	//Create vector of circles.
-	std::vector<Circle> circles;
-	for (int i = 0; i < 5; ++i)
-		circles.push_back(Circle(sf::Vector2i(rand() % 500, rand() % 500)));
-
-	//Create vector of arrows.
-	Arrow testArrow = Arrow(0, 4);
-	testArrow.init(circles[testArrow.getSourceCirc()], circles[testArrow.getDestCirc()]);
-
-	//Create window object.
-	sf::RenderWindow* window = new sf::RenderWindow(sf::VideoMode(600, 600), "Circles and Arrows");
-	window->setVerticalSyncEnabled(true);
-
-	//Main loop:
-	while (window->isOpen())
-	{
-		//Event polling.
-		sf::Event e;
-		while (window->pollEvent(e))
-		{
-			if (e.type == sf::Event::Closed)
-				window->close();
-
-		}
-
-		//Rendering:
-		window->clear(sf::Color::Black);
-
-		//Draw circles.
-		for (auto &circle : circles)
-		{
-			circle.draw(window, 0);
-		}
-
-		//Draw arrows.
-		testArrow.draw(window);
-
-		//Swap buffer.
-		window->display();
-	}
-
-	//Free the window at end of exec.
-	delete window;
-	window = nullptr;
-}
-
 int main()
 {
 	//Seed the rand().
     srand(time(NULL));
 
-	//Initialize global font.
-    initFont();
+	//Both the font object and render window object are passed around the program as reference.
+	//SFML is very picky about the way some objects are passed around.
+	//Create Font object to be passed as reference.
+	sf::Font FONT;
+	FONT.loadFromFile("C:\\Windows\\Fonts\\calibri.TTF"); //_NO_TEXT_
 
 	//Initialize game from file.
-	Game circlesAndArrows(promptForInfile());
+	Game circlesAndArrows(FONT, promptForInfile());
 	circlesAndArrows.initFromFile();
 
-    //Create window object.
-    sf::RenderWindow* window = new sf::RenderWindow(sf::VideoMode(600, 600), "Circles and Arrows");
-    window->setVerticalSyncEnabled(true);
+    //Create window object to be passed as reference.
+    sf::RenderWindow window(sf::VideoMode(600, 600), "Circles and Arrows");
+    //
+	window.setVerticalSyncEnabled(true);
+	window.requestFocus(); //focus window to begin listening for key presses.
 
     //Main loop:
-    while(window->isOpen())
+    while(window.isOpen())
     {
         //Event polling.
         sf::Event e;
-        while(window->pollEvent(e))
+        while(window.pollEvent(e))
         {
             if (e.type == sf::Event::Closed)
-            window->close();
+				window.close();
 
 			if (sf::Keyboard::isKeyPressed(sf::Keyboard::Enter) && circlesAndArrows.isGameOver())
-				window->close();
+				window.close();
         }
 
         //Rendering:
-        window->clear(sf::Color::Black);
+        window.clear(sf::Color::Black);
 
 		circlesAndArrows.update();
 		circlesAndArrows.draw(window);
 
-        window->display();
+        window.display();
     }
-    
-    //Free the window at end of exec.
-    delete window;
-    window = nullptr;
 
     return 0;
 }
-
-
-//todo: Add game constraints.
